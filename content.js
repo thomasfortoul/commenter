@@ -325,9 +325,10 @@ function extractPostContent(post) {
 function isCommentable(post) {
     // Check for the presence of a comment button
     const commentButtonSelectors = [
-        'button[aria-label*="comment" i]',
+        'button[aria-label*="comment"]',
+        'button[aria-label*="Comment"]',
         'button.comment-button',
-        '[aria-label*="Comment" i][role="button"]',
+        '[aria-label*="Comment"][role="button"]',
         '.comment-button',
         '[data-control-name="comment"]'
     ];
@@ -402,6 +403,55 @@ function createGenerateButton() {
             75% { transform: rotate(-15deg) scale(1.2); }
             100% { transform: rotate(0deg) scale(1); }
         }
+        .style-options-container {
+            display: none;
+            margin-left: 8px;
+            gap: 4px;
+        }
+        .style-options-container.visible {
+            display: inline-flex;
+        }
+        .style-option-button {
+            background-color: #f3f2ef;
+            color: #666;
+            border: 1px solid #ddd;
+            border-radius: 16px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .style-option-button:hover {
+            background-color: #e7e5e4;
+            border-color: #0a66c2;
+            color: #0a66c2;
+        }
+        .style-option-button.controversial {
+            border-color: #d73527;
+            color: #d73527;
+        }
+        .style-option-button.controversial:hover {
+            background-color: #d73527;
+            color: white;
+        }
+        .style-option-button.casual {
+            border-color: #57c4dc;
+            color: #57c4dc;
+        }
+        .style-option-button.casual:hover {
+            background-color: #57c4dc;
+            color: white;
+        }
+        .style-option-button.excited {
+            border-color: #f5a623;
+            color: #f5a623;
+        }
+        .style-option-button.excited:hover {
+            background-color: #f5a623;
+            color: white;
+        }
     `;
     document.head.appendChild(style);
 
@@ -423,21 +473,86 @@ function createGenerateButton() {
 
         const post = e.target.closest('.feed-shared-update-v2, .occludable-update');
         if (post) {
-            await handleGenerateClick(post);
+            await handleGenerateClick(post, button);
         }
     });
 
     return button;
 }
 
-async function handleGenerateClick(post) {
+// Create style option buttons
+function createStyleOptionsContainer() {
+    const container = document.createElement('div');
+    container.className = 'style-options-container';
+    
+    const styles = [
+        { type: 'controversial', label: '🔥 Controversial', class: 'controversial' },
+        { type: 'casual', label: '😎 Casual', class: 'casual' },
+        { type: 'excited', label: '🎉 Excited', class: 'excited' }
+    ];
+    
+    styles.forEach(style => {
+        const button = document.createElement('button');
+        button.className = `style-option-button ${style.class}`;
+        button.textContent = style.label;
+        button.setAttribute('data-style-type', style.type);
+        
+        button.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const post = e.target.closest('.feed-shared-update-v2, .occludable-update');
+            if (post) {
+                await handleStyleSelection(post, style.type, container);
+            }
+        });
+        
+        container.appendChild(button);
+    });
+    
+    return container;
+}
+
+async function handleGenerateClick(post, button) {
+    // Find the style options container for this post
+    const container = button.parentNode;
+    let styleOptionsContainer = container.querySelector('.style-options-container');
+    
+    if (!styleOptionsContainer) {
+        // Create and add the style options container
+        styleOptionsContainer = createStyleOptionsContainer();
+        container.appendChild(styleOptionsContainer);
+    }
+    
+    // Toggle visibility of style options
+    if (styleOptionsContainer.classList.contains('visible')) {
+        styleOptionsContainer.classList.remove('visible');
+    } else {
+        // Hide all other style options first
+        document.querySelectorAll('.style-options-container.visible').forEach(container => {
+            container.classList.remove('visible');
+        });
+        styleOptionsContainer.classList.add('visible');
+    }
+}
+
+async function handleStyleSelection(post, styleType, styleOptionsContainer) {
     const content = extractPostContent(post);
 
     try {
+        // Hide the style options
+        styleOptionsContainer.classList.remove('visible');
+        
+        // First, ensure the comment section is open
+        await ensureCommentSectionOpen(post);
+        
         const comment = await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({
                 action: 'generateComment',
-                payload: { postContent: content }
+                payload: { 
+                    postContent: content,
+                    promptType: styleType
+                }
             }, (reply) => {
                 if (chrome.runtime.lastError) {
                     return reject(new Error(chrome.runtime.lastError.message));
@@ -450,7 +565,7 @@ async function handleGenerateClick(post) {
         });
 
         if (comment) {
-            await forceCommentInsertion(comment);
+            await forceCommentInsertion(comment, post);
         }
     } catch (error) {
         console.error('Error generating or inserting comment:', error);
@@ -552,7 +667,7 @@ function addButtonsToPosts() {
                 let buttonAdded = false;
 
                 // First try: Look for the comment button
-                const commentBtn = actionBar.querySelector('button[aria-label*="comment" i], .comment-button, [role="button"]');
+                const commentBtn = actionBar.querySelector('button[aria-label*="comment"], button[aria-label*="Comment"], .comment-button, [role="button"]');
                 if (commentBtn) {
                     // Find a parent element that might be a list item
                     let commentItem = commentBtn;
@@ -727,56 +842,62 @@ function cleanupDuplicateButtons() {
     } catch (error) {
         debug.error('Error cleaning up duplicate buttons', error);
     }
-}/
-    / Add this new function for a reliable direct method of comment insertion
-async function forceCommentInsertion(comment) {
+}
+
+// Function to ensure the comment section is open for a specific post
+async function ensureCommentSectionOpen(post) {
+    debug.log('Ensuring comment section is open for post');
+    
+    // Look for the comment button within this specific post
+    const commentButtonSelectors = [
+        'button[aria-label*="comment"]',
+        'button.comment-button',
+        '.comment-button',
+        '[aria-label*="Comment"]',
+        '[data-control-name="comment"]',
+        'button[aria-label*="Add a comment"]',
+        '[role="button"][aria-label*="comment"]'
+    ];
+
+    let commentButton = null;
+    for (const selector of commentButtonSelectors) {
+        const button = post.querySelector(selector);
+        if (button && button.offsetParent !== null) {
+            commentButton = button;
+            debug.log(`Found comment button with selector: ${selector}`);
+            break;
+        }
+    }
+
+    if (commentButton) {
+        debug.log('Clicking comment button to open comment section');
+        commentButton.click();
+        // Wait for comment section to appear
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        return true;
+    } else {
+        debug.log('No comment button found in post');
+        return false;
+    }
+}
+
+// Add this new function for a reliable direct method of comment insertion
+async function forceCommentInsertion(comment, post = null) {
     debug.log('Attempting FORCE comment insertion method');
     if (debug.isDebugMode) debug.showVisualFeedback('Starting FORCE comment insertion', null, 'info');
 
     try {
-        // Step 1: Find and click the comment button first
-        const commentButtonSelectors = [
-            'button[aria-label*="comment"]',
-            'button.comment-button',
-            '.comment-button',
-            '[aria-label*="Comment"]',
-            '[data-control-name="comment"]',
-            'button[aria-label*="Add a comment"]',
-            '[role="button"][aria-label*="comment"]'
-        ];
-
-        let commentButton = null;
-        for (const selector of commentButtonSelectors) {
-            const buttons = document.querySelectorAll(selector);
-            for (const button of buttons) {
-                // Check if button is visible
-                if (button.offsetParent !== null) {
-                    commentButton = button;
-                    if (debug.isDebugMode) debug.showVisualFeedback(`Found comment button with selector: ${selector}`, button, 'success');
-                    break;
-                }
-            }
-            if (commentButton) break;
-        }
-
-        if (commentButton) {
-            debug.log('Found comment button, clicking it');
-            commentButton.click();
-            // Wait for comment box to appear
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        } else {
-            if (debug.isDebugMode) debug.showVisualFeedback('No comment button found!', null, 'error');
-        }
-
-        // Step 2: Find the comment input box
+        // Step 1: Find the comment input box (comment section should already be open)
+        const searchContext = post || document;
         const commentBoxSelectors = [
             'div[contenteditable="true"]',
             'div[role="textbox"]',
             'div.comments-comment-box-comment__text-editor',
             'div.ql-editor',
             'div[data-placeholder="Add a comment…"]',
-            '[aria-label*="comment" i][contenteditable="true"]',
-            '[aria-label*="Comment" i][role="textbox"]',
+            '[aria-label*="comment"][contenteditable="true"]',
+            '[aria-label*="Comment"][contenteditable="true"]',
+            '[aria-label*="Comment"][role="textbox"]',
             'div.comments-comment-box__content-editor',
             'div.editor-content',
             'p[data-placeholder="Add a comment…"]',
@@ -786,7 +907,7 @@ async function forceCommentInsertion(comment) {
         let commentBox = null;
         let usedSelector = '';
         for (const selector of commentBoxSelectors) {
-            const elements = document.querySelectorAll(selector);
+            const elements = searchContext.querySelectorAll(selector);
 
             for (const element of elements) {
                 if (element.offsetParent !== null) { // Check if element is visible
@@ -806,7 +927,7 @@ async function forceCommentInsertion(comment) {
             return false;
         }
 
-        // Step 3: Focus and clear the comment box
+        // Step 2: Focus and clear the comment box
         commentBox.focus();
         commentBox.click();
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -815,106 +936,130 @@ async function forceCommentInsertion(comment) {
         // Clear any existing content
         commentBox.innerHTML = '';
 
-        // Step 4: Try multiple insertion methods
+        // Step 3: Try multiple insertion methods
         let success = false;
 
-        // Method 1: Clipboard paste
+        // Method 1: Direct text insertion (most reliable)
         try {
-            debug.log('Trying clipboard paste approach');
-            if (debug.isDebugMode) debug.showVisualFeedback('Trying clipboard paste approach', commentBox, 'info');
+            debug.log('Trying direct text insertion');
+            if (debug.isDebugMode) debug.showVisualFeedback('Trying direct text insertion', commentBox, 'info');
 
-            await navigator.clipboard.writeText(comment);
+            commentBox.textContent = comment;
 
-            // Use keyboard shortcut to paste (Cmd+V or Ctrl+V)
-            const isMac = navigator.platform.indexOf('Mac') !== -1;
-            const metaKey = isMac ? true : false;
-            const ctrlKey = !isMac;
+            if (!commentBox.textContent) {
+                commentBox.innerText = comment;
+            }
 
-            commentBox.dispatchEvent(new KeyboardEvent('keydown', {
-                key: 'v',
-                code: 'KeyV',
-                ctrlKey: ctrlKey,
-                metaKey: metaKey,
-                bubbles: true
-            }));
+            if (!commentBox.textContent && !commentBox.innerText) {
+                const textNode = document.createTextNode(comment);
+                commentBox.appendChild(textNode);
+            }
 
-            // Also try execCommand as backup
-            document.execCommand('paste');
-
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Check if paste worked
+            // Check if direct insertion worked
             if (commentBox.textContent || commentBox.innerText) {
                 success = true;
-                if (debug.isDebugMode) debug.showVisualFeedback('Clipboard paste successful!', commentBox, 'success');
+                if (debug.isDebugMode) debug.showVisualFeedback('Direct text insertion successful!', commentBox, 'success');
             }
-        } catch (clipboardError) {
-            debug.error('Clipboard paste failed', clipboardError);
+        } catch (textError) {
+            debug.error('Direct text insertion failed', textError);
         }
 
-        // Method 2: Direct text insertion
+        // Method 2: Clipboard paste (fallback)
         if (!success) {
             try {
-                debug.log('Trying direct text insertion');
-                if (debug.isDebugMode) debug.showVisualFeedback('Trying direct text insertion', commentBox, 'info');
+                debug.log('Trying clipboard paste approach as fallback');
+                if (debug.isDebugMode) debug.showVisualFeedback('Trying clipboard paste approach', commentBox, 'info');
 
-                commentBox.textContent = comment;
+                // Only try clipboard if it's available and we're in a secure context
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(comment);
 
-                if (!commentBox.textContent) {
-                    commentBox.innerText = comment;
-                }
+                    // Use keyboard shortcut to paste (Cmd+V or Ctrl+V)
+                    const isMac = navigator.platform.indexOf('Mac') !== -1;
+                    const metaKey = isMac ? true : false;
+                    const ctrlKey = !isMac;
 
-                if (!commentBox.textContent && !commentBox.innerText) {
-                    const textNode = document.createTextNode(comment);
-                    commentBox.appendChild(textNode);
-                }
+                    commentBox.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'v',
+                        code: 'KeyV',
+                        ctrlKey: ctrlKey,
+                        metaKey: metaKey,
+                        bubbles: true
+                    }));
 
-                // Check if direct insertion worked
-                if (commentBox.textContent || commentBox.innerText) {
-                    success = true;
-                    if (debug.isDebugMode) debug.showVisualFeedback('Direct text insertion successful!', commentBox, 'success');
-                }
-            } catch (textError) {
-                debug.error('Direct text insertion failed', textError);
-            }
-        }
+                    await new Promise(resolve => setTimeout(resolve, 300));
 
-        // Method 3: InputEvent simulation
-        if (!success) {
-            try {
-                debug.log('Trying InputEvent simulation');
-                if (debug.isDebugMode) debug.showVisualFeedback('Trying InputEvent simulation', commentBox, 'info');
-
-                // Clear content again to be safe
-                commentBox.innerHTML = '';
-
-                // Use modern InputEvent to simulate typing
-                commentBox.dispatchEvent(new InputEvent('input', {
-                    inputType: 'insertText',
-                    data: comment,
-                    bubbles: true,
-                    cancelable: true
-                }));
-
-                // Check if input event approach worked
-                if (commentBox.textContent || commentBox.innerText) {
-                    success = true;
-                    if (debug.isDebugMode) debug.showVisualFeedback('InputEvent simulation successful!', commentBox, 'success');
+                    // Check if paste worked
+                    if (commentBox.textContent || commentBox.innerText) {
+                        success = true;
+                        if (debug.isDebugMode) debug.showVisualFeedback('Clipboard paste successful!', commentBox, 'success');
+                    }
                 } else {
-                    // Try execCommand as last resort
-                    document.execCommand('insertText', false, comment);
+                    debug.log('Clipboard API not available or not in secure context, skipping');
+                }
+            } catch (clipboardError) {
+                debug.error('Clipboard paste failed', clipboardError);
+            }
+        }
+
+        // Method 3: HTML insertion and InputEvent simulation
+        if (!success) {
+            try {
+                debug.log('Trying HTML insertion and InputEvent simulation');
+                if (debug.isDebugMode) debug.showVisualFeedback('Trying HTML insertion', commentBox, 'info');
+
+                // Try innerHTML approach
+                commentBox.innerHTML = comment.replace(/\n/g, '<br>');
+                
+                if (commentBox.textContent || commentBox.innerText) {
+                    success = true;
+                    if (debug.isDebugMode) debug.showVisualFeedback('HTML insertion successful!', commentBox, 'success');
+                } else {
+                    // Clear and try InputEvent simulation
+                    commentBox.innerHTML = '';
+                    
+                    // First set the text content
+                    commentBox.textContent = comment;
+                    
+                    // Then simulate input events
+                    commentBox.dispatchEvent(new InputEvent('input', {
+                        inputType: 'insertText',
+                        data: comment,
+                        bubbles: true,
+                        cancelable: true
+                    }));
 
                     if (commentBox.textContent || commentBox.innerText) {
                         success = true;
-                        if (debug.isDebugMode) debug.showVisualFeedback('execCommand insertText successful!', commentBox, 'success');
+                        if (debug.isDebugMode) debug.showVisualFeedback('InputEvent simulation successful!', commentBox, 'success');
                     }
                 }
             } catch (inputError) {
-                debug.error('InputEvent simulation failed', inputError);
+                debug.error('HTML insertion and InputEvent simulation failed', inputError);
             }
         }
 
-        // Step 5: Trigger change events to notify LinkedIn
+        // Method 4: execCommand as last resort
+        if (!success) {
+            try {
+                debug.log('Trying execCommand as last resort');
+                if (debug.isDebugMode) debug.showVisualFeedback('Trying execCommand', commentBox, 'info');
+
+                // Focus and select all content first
+                commentBox.focus();
+                document.execCommand('selectAll', false, null);
+                document.execCommand('insertText', false, comment);
+
+                if (commentBox.textContent || commentBox.innerText) {
+                    success = true;
+                    if (debug.isDebugMode) debug.showVisualFeedback('execCommand successful!', commentBox, 'success');
+                }
+            } catch (execError) {
+                debug.error('execCommand failed', execError);
+            }
+        }
+
+        // Step 4: Trigger change events to notify LinkedIn
         if (success) {
             // Trigger various events that LinkedIn might be listening for
             commentBox.dispatchEvent(new Event('input', { bubbles: true }));
