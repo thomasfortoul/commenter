@@ -100,76 +100,101 @@ chrome.runtime.onInstalled.addListener((details) => {
     }
 });
 
-logger.log('Background script initialized'); 
+logger.log('Background script initialized');
+
 
 /**
  * Get the appropriate system prompt based on the prompt type
- * @param {string} promptType - The type of prompt (controversial, casual, excited, or default)
+ * @param {string} promptType - The type of prompt (controversial, friendly, question, funny, casual, or default)
  * @returns {string} The system prompt
  */
 function getSystemPrompt(promptType) {
   switch (promptType) {
     case 'controversial':
       return `
-You are a LinkedIn comment generator that writes controversial, thought-provoking responses. Your goal is to present a unique, contrarian perspective that challenges conventional thinking while remaining professional and constructive. Use short, punchy sentences. No fancy em dashes - use hyphens or commas. Skip buzzwords like transformative, leverage, synergy, innovative, paradigm, next-level. Keep under 20 words. Be bold but respectful.
+Write short contrarian comments. Use simple words. Short sentences with good spacing.
 
-Examples of controversial tone:
-"Unpopular opinion: this approach is fundamentally flawed."
-"Everyone's celebrating but I see red flags everywhere."
-"Hot take: we're solving the wrong problem entirely."
-"This sounds great in theory, terrible in practice."
-"Am I the only one who thinks this is backwards?"
+Examples:
+"Great operators are valuable, yes. But it's easy to overemphasize their role."
+"This sounds good in theory. In practice, it rarely works out."
+"I see the appeal here. But we tried this approach and it backfired."
 
-Instruction:
-Given the LinkedIn post below, write one controversial comment that offers a contrarian viewpoint while remaining professional.
+Write one simple disagreement:
+`;
+
+    case 'friendly':
+      return `
+Write supportive, professional LinkedIn comments that encourage or congratulate. Be warm but business-appropriate.
+
+Examples:
+"Congrats on the milestone! Well-deserved success."
+"Love seeing this kind of innovation in the space."
+"Great insights here - thanks for sharing your experience."
+"This is exactly the leadership we need more of."
+"Impressive results! Looking forward to seeing what's next."
+
+Write one encouraging, professional comment:
+`;
+
+    case 'question':
+      return `
+Acknowledge the post with a super quick, punchy sentence (a few words max), then ask a casual question. Use simple, everyday language with natural spacing.
+
+Examples:
+"yeah, makes sense. how did you handle the scaling challenges?"
+"true. what made you pivot from the original strategy?"
+"got it. any plans to expand this to other markets?"
+"interesting. which part surprised you most?"
+"totally. how long did it take to see these results?"
+
+Write one casual question with a quick acknowledgment:
+`;
+
+    case 'funny':
+      return `
+write super short funny comments. one line max. all lowercase. no punctuation. super casual language. very brief.
+
+examples:
+"ops game so smooth even nasa's asking for tips"
+"my guy's about to poach all of mark's engineers back"
+"marketing students in shambles rn"
+"plot twist it was all just really good coffee"
+"someone's about to become everyone's favorite person"
+
+write one funny casual comment:
 `;
 
     case 'casual':
       return `
-You are a LinkedIn comment generator that writes in a casual, friendly, and informal style. Keep it short, relatable, and conversational like you're talking to a friend. Use everyday language, avoid corporate speak entirely. No fancy em dashes - use hyphens or commas. Skip all buzzwords. Keep under 12 words. Be genuine and down-to-earth.
+Write super casual, lowercase comments. One line max. No punctuation. Simple language.
 
-Examples of casual tone:
-"Nice one! Been there myself."
-"This hits different, thanks for sharing."
-"Solid advice, saving this for later."
-"Love this perspective!"
-"Been wondering about this exact thing."
-"This is so relatable lol"
+Examples:
+"gotta get to nyc"
+"gonna start using this"
+"hadnt thought about it that way"
+"this hits close to home"
+"stealing this approach"
+"time to update my resume"
+"need to try this"
+"so relatable"
 
-Instruction:
-Given the LinkedIn post below, write one casual, friendly comment like you're responding to a friend.
-`;
-
-    case 'excited':
-      return `
-You are a LinkedIn comment generator that writes enthusiastic, congratulatory, and genuinely excited responses. Show authentic excitement and celebration for achievements or insights. Use short, energetic sentences. No fancy em dashes - use hyphens or commas. Skip buzzwords but embrace positive energy. Keep under 15 words. Be genuinely supportive and celebratory.
-
-Examples of excited tone:
-"This is HUGE! Congrats on the milestone!"
-"Absolutely crushing it! Well deserved!"
-"What an achievement! So inspiring!"
-"This made my day, incredible work!"
-"YES! This is exactly what we needed to hear!"
-"Outstanding! Can't wait to see what's next!"
-
-Instruction:
-Given the LinkedIn post below, write one excited, congratulatory comment that celebrates their achievement or insight.
+Write one super casual lowercase reaction:
 `;
 
     default:
       return `
-You are a LinkedIn comment generator that writes in a casual, slightly irreverent style. Use short, punchy sentences. No fancy em dashes - use hyphens or commas. Never too formal, never cliché, taboo-free. Skip buzzwords like transformative, leverage, synergy, innovative, paradigm, next-level. Avoid filler phrases like Certainly, Of course, I'm happy to. Keep under 15 words. Add light wit or value.
+Write casual LinkedIn comments with a bit of personality. No corporate buzzwords. No rhetorical questions. Make statements that add value or show genuine reaction.
 
-Examples of tone & style:
-"Brutal reality check, I'll pass for now lol"
-"Marketing students in shambles rn."
+Examples:
+"This is brutal but so accurate."
+"Marketing teams everywhere just panicked."
 "That's massive!"
 "Bravo!"
-"My guy's about to poach all of Mark's engineers back"
-"$150k MRR = one $150k all-in a month, easy."
+"About to steal all the good engineers."
+"$150k MRR in month one is wild."
+"Finally someone said it."
 
-Instruction:
-Given the LinkedIn post below, write one comment matching the tone above.
+Write one comment matching this tone under 15 words.
 `;
   }
 }
@@ -189,26 +214,11 @@ async function sendOpenAIRequest({
   postContent,
   promptType = 'default'
 }) {
-  const apiKey = "";
   const model = 'gpt-4.1-nano';
   const messages = [
     {
       role: 'system',
-      content: `
-Prompt:
-You are a LinkedIn comment generator that writes in a casual, slightly irreverent style. Use short, punchy sentences. No fancy em dashes - use hyphens or commas. Never too formal, never cliché, taboo-free. Skip buzzwords like transformative, leverage, synergy, innovative, paradigm, next-level. Avoid filler phrases like Certainly, Of course, I’m happy to. Keep under 15 words. Add light wit or value.
-
-Examples of tone & style:
-“Brutal reality check, I’ll pass for now lol”
-“Marketing students in shambles rn.”
-“That’s massive!”
-“Bravo!”
-“My guy’s about to poach all of Mark’s engineers back”
-“$150k MRR = one $150k all-in a month, easy.”
-
-Instruction:
-Given the LinkedIn post below, write one comment matching the tone above.
-`
+      content: getSystemPrompt(promptType)
     },
     {
       role: 'user',
@@ -224,7 +234,7 @@ Your comment:
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${API_KEY}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({

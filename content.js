@@ -436,20 +436,36 @@ function createGenerateButton() {
             background-color: #d73527;
             color: white;
         }
+        .style-option-button.friendly {
+            border-color: #28a745;
+            color: #28a745;
+        }
+        .style-option-button.friendly:hover {
+            background-color: #28a745;
+            color: white;
+        }
+        .style-option-button.question {
+            border-color: #6f42c1;
+            color: #6f42c1;
+        }
+        .style-option-button.question:hover {
+            background-color: #6f42c1;
+            color: white;
+        }
+        .style-option-button.funny {
+            border-color: #fd7e14;
+            color: #fd7e14;
+        }
+        .style-option-button.funny:hover {
+            background-color: #fd7e14;
+            color: white;
+        }
         .style-option-button.casual {
             border-color: #57c4dc;
             color: #57c4dc;
         }
         .style-option-button.casual:hover {
             background-color: #57c4dc;
-            color: white;
-        }
-        .style-option-button.excited {
-            border-color: #f5a623;
-            color: #f5a623;
-        }
-        .style-option-button.excited:hover {
-            background-color: #f5a623;
             color: white;
         }
     `;
@@ -487,8 +503,10 @@ function createStyleOptionsContainer() {
     
     const styles = [
         { type: 'controversial', label: '🔥 Controversial', class: 'controversial' },
-        { type: 'casual', label: '😎 Casual', class: 'casual' },
-        { type: 'excited', label: '🎉 Excited', class: 'excited' }
+        { type: 'friendly', label: '😊 Friendly', class: 'friendly' },
+        { type: 'question', label: '❓ Question', class: 'question' },
+        { type: 'funny', label: '😂 Funny', class: 'funny' },
+        { type: 'casual', label: '💭 Casual', class: 'casual' }
     ];
     
     styles.forEach(style => {
