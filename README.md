@@ -43,11 +43,15 @@ A Chrome extension that helps you generate professional comments for LinkedIn po
 
 ## Configuration
 
-The extension uses a predefined API endpoint for comment generation. If you want to use your own service:
+The extension is configured to use the OpenAI API. To use it, you need to provide your own API key.
 
-1. Open `content.js`
-2. Find the `API_CONFIG` object
-3. Update the `URL` property to your own endpoint
+1. Open `manifest.json`
+2. Find the `env` object
+3. Replace `<YOUR_KEY>` with your actual OpenAI API key
+
+### Security Note
+
+**Do not ship the extension with your API key hard-coded in `manifest.json`**. For production use, it is recommended to use a proxy server to handle API requests securely or implement OAuth flows for user-based authentication.
 
 ## Development
 

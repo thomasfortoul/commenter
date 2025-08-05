@@ -1,43 +1,56 @@
-# Plan to Integrate OpenAI API into LinkedIn Comment Generator Extension
+# Plan: Direct Comment Insertion
 
-This document outlines the plan to modify the Chrome extension to use the OpenAI API directly for comment generation, replacing the current n8n webhook integration.
+This plan outlines the necessary changes to modify the LinkedIn Comment Generator extension. The goal is to replace the current modal-based UI with a direct "Generate" button that inserts the comment into the LinkedIn comment box.
 
-## 2. Revised Plan
+## 1. Update `background.js`
 
-- **Update API_CONFIG**: Move API_CONFIG out of `content.js` into `manifest.json` under `"env": { "OPENAI_API_KEY": "<YOUR_KEY>" }`.
-- **Alternatively**: Store the key at runtime via `chrome.storage.session` or prompt the user once in an options page and save it securely.
-- **Implement Background Service Worker**: Use `background.js` to house the `sendOpenAIRequest` function.
-- **Grant host_permissions**: Add `https://api.openai.com/*` in `manifest.json`.
-- **Refactor generateCommentAPI**: In `content.js`, send a message to the background worker with `{ postContent, tone, hint }`.
-- **Implement sendOpenAIRequest**: In `background.js`, build and dispatch the `fetch` call.
-- **Enhance Response Handling**: Parse JSON, check for `response.ok`, extract `choices[0].message.content`, and handle errors (e.g., rate limits, invalid JSON).
-- **Add Security Note**: Advise against shipping the API key in production; recommend using a proxy server or implementing OAuth flows for user-based authentication.
+The `background.js` script will be updated to use a new, hardcoded prompt and the `gpt-4.1-nano` model.
 
-## 3. OpenAI API Integration Documentation
+### Changes:
 
-Below is a ready-to-use function signature and example for calling the Chat Completions API from a background script (`background.js`):
+- **Modify `sendOpenAIRequest` function:**
+  - The `messages` parameter will be replaced with a hardcoded prompt structure.
+  - The `model` will be set to `gpt-4.1-nano` by default.
+  - The function will only need the `postContent` as a parameter.
 
 ```javascript
 // background.js
 
-/**
- * Sends a chat completion request to OpenAI.
- *
- * @param {Array<Object>} messages - Array of message objects, e.g.:
- *   [{ role: 'system', content: 'You are a helpful assistant.' },
- *    { role: 'user', content: prompt }]
- * @param {string} model - The model to use, e.g. 'gpt-3.5-turbo'.
- * @param {number} [temperature=0.7] - Sampling temperature 0–2.
- * @param {number} [maxTokens=150] - Maximum number of tokens to generate.
- * @returns {Promise<string>} - The assistant's reply content.
- */
 async function sendOpenAIRequest({
-  messages,
-  model = 'gpt-3.5-turbo',
-  temperature = 0.7,
-  maxTokens = 150
+  postContent
 }) {
-  const apiKey = chrome.runtime.getManifest().env.OPENAI_API_KEY;
+  const apiKey = ""; // Replace with your actual API key
+  const model = 'gpt-4.1-nano';
+  const messages = [
+    {
+      role: 'system',
+      content: `
+Prompt:
+You are a LinkedIn comment generator that writes in a casual, slightly irreverent style. Use short, punchy sentences. No fancy em dashes - use hyphens or commas. Never too formal, never cliché, taboo-free. Skip buzzwords like transformative, leverage, synergy, innovative, paradigm, next-level. Avoid filler phrases like Certainly, Of course, I’m happy to. Keep under 15 words. Add light wit or value.
+
+Examples of tone & style:
+“Brutal reality check, I’ll pass for now lol”
+“Marketing students in shambles rn.”
+“That’s massive!”
+“Bravo!”
+“My guy’s about to poach all of Mark’s engineers back”
+“$150k MRR = one $150k all-in a month, easy.”
+
+Instruction:
+Given the LinkedIn post below, write one comment matching the tone above.
+`
+    },
+    {
+      role: 'user',
+      content: `
+LinkedIn post:
+${postContent}
+
+Your comment:
+`
+    }
+  ];
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -47,8 +60,8 @@ async function sendOpenAIRequest({
     body: JSON.stringify({
       model,
       messages,
-      temperature,
-      max_tokens: maxTokens
+      temperature: 0.7,
+      max_tokens: 150
     })
   });
 
@@ -62,65 +75,106 @@ async function sendOpenAIRequest({
 }
 ```
 
-**Endpoint**: `https://api.openai.com/v1/chat/completions`
+## 2. Modify `content.js`
 
-**Headers**:
+The `content.js` script will be significantly simplified. The modal UI will be removed, and the "Generate" button will trigger the new direct insertion workflow.
 
-- `Authorization: Bearer YOUR_API_KEY`
-- `Content-Type: application/json`
+### Changes:
 
-**Request Body Parameters**:
-
-- `model` (string): e.g. "gpt-3.5-turbo" or "gpt-4"
-- `messages` (array): Sequence of `{ role, content }`
-- `temperature` (number, optional): Sampling temperature
-- `max_tokens` (integer, optional): Limits generated tokens
-
-### Integrating with `content.js`
+- **Remove `createCommentUI` function:** The entire `createCommentUI` function will be deleted.
+- **Remove tone and model dropdowns:** All code related to the tone and model selection UI will be removed.
+- **Update `createGenerateButton`:** The event listener for the "Generate" button will be updated to call a new `handleGenerateClick` function.
+- **Create `handleGenerateClick` function:** This new function will orchestrate the comment generation and insertion.
 
 ```javascript
 // content.js
-document.getElementById('generate-comment-btn').addEventListener('click', async () => {
-  const postContent = extractPostContent(); // your existing logic
-  const tone = getSelectedTone();
-  const hint = getUserHint();
-  const messages = [
-    { role: 'system', content: 'You are a LinkedIn comment assistant.' },
-    { role: 'user', content: `Post: ${postContent}\nTone: ${tone}\nHint: ${hint}` }
-  ];
 
-  // Send to background for processing
-  chrome.runtime.sendMessage(
-    { action: 'generateComment', payload: { messages } },
-    (reply) => {
-      if (reply.error) {
-        console.error(reply.error);
-        alert('Failed to generate comment.');
-      } else {
-        insertComment(reply.comment);
-      }
+// ... (keep existing functions like getPostId, hasContent, extractPostContent, etc.)
+
+// This function will be removed
+// function createCommentUI(post, generateButton) { ... }
+
+function createGenerateButton() {
+    const button = document.createElement('button');
+    // ... (button styling remains the same)
+
+    button.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        const post = e.target.closest('.feed-shared-update-v2, .occludable-update');
+        if (post) {
+            await handleGenerateClick(post);
+        }
+    });
+
+    return button;
+}
+
+async function handleGenerateClick(post) {
+    const content = extractPostContent(post);
+    
+    try {
+        const comment = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({ 
+                action: 'generateComment', 
+                payload: { postContent: content } 
+            }, (reply) => {
+                if (chrome.runtime.lastError) {
+                    return reject(new Error(chrome.runtime.lastError.message));
+                }
+                if (reply.error) {
+                    return reject(new Error(reply.error));
+                }
+                resolve(reply.comment);
+            });
+        });
+
+        if (comment) {
+            await forceCommentInsertion(comment);
+        }
+    } catch (error) {
+        console.error('Error generating or inserting comment:', error);
     }
-  );
-});
+}
+
+// ... (keep addButtonsToPosts, cleanupDuplicateButtons, forceCommentInsertion, etc.)
 ```
 
-And in `background.js` you’d handle the message:
+## 3. Simplify `popup.html` and `popup.js`
+
+The popup is no longer the primary interface for the extension. It will be simplified to show basic information.
+
+### `popup.html` Changes:
+
+The body of `popup.html` will be replaced with a simple message.
+
+```html
+<!-- popup.html -->
+<body>
+    <div class="container">
+        <h1>LinkedIn Comment Generator</h1>
+        <p>The "Generate" button is now available directly on LinkedIn posts.</p>
+    </div>
+    <script src="popup.js"></script>
+</body>
+```
+
+### `popup.js` Changes:
+
+The `popup.js` script will be cleared of all logic related to comment generation and UI updates.
 
 ```javascript
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'generateComment') {
-    sendOpenAIRequest(message.payload)
-      .then((comment) => sendResponse({ comment }))
-      .catch((error) => sendResponse({ error: error.message }));
-    return true; // keep the message channel open for async reply
-  }
+// popup.js
+document.addEventListener('DOMContentLoaded', function() {
+    // No special logic needed for the simplified popup.
 });
 ```
 
-## 4. Security Best Practices
+## 4. Review and Finalize
 
-- **Avoid Hard-Coding Keys**: Use `manifest.json`’s "env" block for development and a secure vault or proxy backend for production.
-- **Leverage Chrome Storage**: Prompt the user once for their key via an options page and save with `chrome.storage.session.set({ openaiKey })`.
-- **Least Privilege**: Only request permissions for `https://api.openai.com/*` and the `storage` API.
+After implementing these changes, a thorough review will be conducted to ensure the new workflow is smooth and bug-free.
 
-By following this revised plan and the above documentation, you’ll have a clear, secure, and maintainable integration of ChatGPT’s API into your LinkedIn Comment Generator extension.
+---
+
+Once you approve this plan, I will request to switch to **Code mode** to implement these changes.
